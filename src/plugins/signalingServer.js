@@ -1,78 +1,90 @@
 import fp from 'fastify-plugin';
 import BiMap from 'bidirectional-map';
+import WSController from '../scripts/wsServer.js';
+import S from 'fluent-json-schema';
+import generateKey from '../scripts/generateKey.js';
 
 const signalingServer = async (fastify) => {
   const pairs = new BiMap();
-  const connections = fastify.websocketServer.clients;
+  const hosts = new BiMap();
 
-  const findSocketById = (id) => {
-    if (!id) return null;
-    for (const socket of connections) {
-      if (socket.id === id) {
-        return socket;
-      }
-    }
-  };
-
-  const messageHandler = (socket, data) => {
-    try {
-      const message = JSON.parse(data);
-      const { offer, answer, candidate } = message;
-      if (offer) {
-        const receivingSocket = findSocketById(message?.receiverId);
-        if (!receivingSocket) {
-          socket.send('Error: Id not found');
-          return;
-        }
-        if (!pairs.get(receivingSocket)) {
-          pairs.set(receivingSocket, socket);
-        }
-        receivingSocket.send(JSON.stringify({ offer, id: socket.id }));
-        console.log('Received offer');
-      }
-
-      if (answer) {
-        const client = pairs.get(socket);
-        if (!client) {
-          socket.send('Error: No offer received');
-          return;
-        }
-        client.send(JSON.stringify({ answer, id: socket.id }));
-        console.log('Received answer');
-      }
-
-      if (candidate) {
-        const client = pairs.get(socket) || pairs.getKey(socket);
-        if (!client) {
-          socket.send('Error: No offer received');
-          return;
-        }
-        client.send(JSON.stringify({ candidate }));
-        console.log(candidate);
-        console.log('Candidate received');
-      }
-    } catch (err) {
-      socket.send(`Error: ${err.message}`);
-      console.log(err);
-    }
-  };
-
-  const closeHandler = (socket) => {
+  const onClose = (socket) => {
+    console.log('Connection closed');
     pairs.delete(socket);
+    pairs.deleteValue(socket);
+    hosts.deleteValue(socket);
   };
+  const wsConnection = new WSController({ onClose });
 
-  fastify.get('/signaling/:id', { websocket: true }, (socket, req) => {
-    console.log('Client connected');
-    socket.id = req.params.id;
-    socket.on('message', (message) => {
-      console.log(`Received message: ${message}`);
-      messageHandler(socket, message);
-    });
+  wsConnection.addEvent('HELLO', { schema: 
+      S.object()
+        .prop('username', S.string())
+        .prop('password', S.string())
+        .required(['username', 'password'])
+        .valueOf()
+  },
+  (socket, data) => {
+    socket.send(JSON.stringify(data));
+  });
 
-    socket.on('close', () => {
-      console.log('Client disconnected');
-      closeHandler(socket);
-    });
+  wsConnection.addEvent('RTC OFFER', { schema:
+      S.object()
+        .prop('offer', S.object())
+        .required(['offer'])
+        .valueOf()
+  },
+  (socket, data) => {
+    const { offer } = data;
+    const toSocket = pairs.getKey(socket) || pairs.get(socket);
+    if (toSocket) {
+      toSocket.send(JSON.stringify({ EVENT: 'RTC OFFER', payload: { offer } }));
+    }
+  });
+
+  wsConnection.addEvent('RTC ANSWER', { schema:
+      S.object()
+        .prop('answer', S.object())
+        .required(['answer'])
+        .valueOf()
+  },
+  (socket, data) => {
+    const { answer } = data;
+    const toSocket = pairs.get(socket) || pairs.getKey(socket);
+    if (toSocket) {
+      toSocket.send(JSON.stringify({ EVENT: 'RTC OFFER', payload: { answer } }));
+    }
+  });
+
+  wsConnection.addEvent('HOST REQUEST', (socket) => {
+    if (hosts.getKey(socket)) {
+      socket.send(JSON.stringify({ EVENT: 'HOST RESPONSE', payload: { 'success': false } }));
+      return;
+    }
+    const key = generateKey();
+    hosts.set(key, socket);
+    socket.send(JSON.stringify({ EVENT: 'HOST RESPONSE', payload: { key, 'success': true } }));
+  });
+
+  wsConnection.addEvent('JOIN REQUEST', { schema:
+      S.object()
+        .prop('key', S.string())
+        .required(['key'])
+        .valueOf()
+  }, (socket, data) => {
+    const { key } = data;
+    const hostSocket = hosts.get(key);
+    if (!hostSocket) {
+      socket.send(JSON.stringify({ EVENT: 'JOIN RESPONSE',
+        payload: { 'success': false, msg: 'Key not found' } }));
+      return;
+    }
+    pairs.set(hostSocket, socket);
+    socket.send(JSON.stringify({ EVENT: 'JOIN RESPONSE', payload: { 'success': true } }));
+  });
+
+
+  fastify.get('/signaling', { websocket: true }, (socket) => {
+    wsConnection.listen(socket);
   });
 };
 

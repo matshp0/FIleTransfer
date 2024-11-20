@@ -3,7 +3,8 @@ import { fileURLToPath } from 'url';
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
-import signalingServer from './plugins/signalingServer.js';
+import AutoLoad from '@fastify/autoload';
+import { join } from 'desm';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,10 +14,16 @@ const fastify = Fastify({
 });
 
 fastify.register(fastifyWebsocket);
+
 fastify.register(fastifyStatic, {
   root: path.join(__dirname, '../public'),
 });
-fastify.register(signalingServer);
+
+console.log(import.meta.url);
+fastify.register(AutoLoad, {
+  dir: join(import.meta.url, 'routes'),
+  dirNameRoutePrefix: false
+});
 
 fastify.listen(
   { port: process.env.PORT || 8000, host: '0.0.0.0' },

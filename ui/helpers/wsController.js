@@ -2,28 +2,26 @@ export default class WSController {
   constructor(opt) {
     this.events = new Map();
     this.opt = opt;
-    this.set = new Set();
   }
 
   listen(socket) {
-    this.set.add(socket);
-    const { onClose, onError } = this.opt;
+    const { onClose, onError } = this.opt || {};
     !onClose || socket.on('close', onClose);
     !onError || socket.on('error', onError);
-    const onMessage = this.onMessage.bind(this, socket);
-    socket.on('message', onMessage);
+    socket.onmessage = this.onMessage.bind(this, socket);
   }
 
   addEvent(event, handler) {
-    this.events.set(event, { handler});
+    this.events.set(event, { handler });
   }
 
-  onMessage(socket, data) {
+  onMessage(socket, incomingEvent) {
     try {
+      const { data } = incomingEvent;
       const message = JSON.parse(data);
-      const { EVENT, payload } = message;
-      const { handler } = this.events.get(EVENT) ?? {};
-      console.log('EVENT:', EVENT);
+      const { event, payload } = message;
+      const { handler } = this.events.get(event) ?? {};
+      console.log('EVENT:', event);
       if (!handler) {
         throw new Error('Event not found');
       }

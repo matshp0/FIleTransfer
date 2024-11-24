@@ -51,21 +51,21 @@ const signalingServer = async (fastify) => {
     const { answer } = data;
     const toSocket = pairs.get(socket) || pairs.getKey(socket);
     if (toSocket) {
-      toSocket.send(JSON.stringify({ event: 'RTC OFFER', payload: { answer } }));
+      toSocket.send(JSON.stringify({ event: 'RTC ANSWER', payload: { answer } }));
     }
   });
 
   wsConnection.addEvent('ICE CANDIDATE', { schema:
         S.object()
-          .prop('offer', S.object())
-          .required(['offer'])
+          .prop('candidate', S.object())
+          .required(['candidate'])
           .valueOf()
     },
     (socket, data) => {
-      const { offer } = data;
+      const { candidate } = data;
       const toSocket = pairs.getKey(socket) || pairs.get(socket);
       if (toSocket) {
-        toSocket.send(JSON.stringify({ event: 'RTC OFFER', payload: { offer } }));
+        toSocket.send(JSON.stringify({ event: 'ICE CANDIDATE', payload: { candidate } }));
       }
     });
 

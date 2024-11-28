@@ -10,9 +10,13 @@ const signalingServer = async (fastify) => {
 
   const onClose = (socket) => {
     console.log('Connection closed');
-    pairs.delete(socket);
-    pairs.deleteValue(socket);
-    hosts.deleteValue(socket);
+    if (hosts.getKey(socket)) {
+      hosts.deleteValue(socket);
+      pairs.delete(socket);
+    }
+    else{
+      pairs.deleteValue(socket);
+    }
   };
   const wsConnection = new WSController({ onClose });
 
@@ -37,7 +41,7 @@ const signalingServer = async (fastify) => {
     const { offer } = data;
     const toSocket = pairs.getKey(socket) || pairs.get(socket);
     if (toSocket) {
-      toSocket.send(JSON.stringify({ EVENT: 'RTC OFFER', payload: { offer } }));
+      toSocket.send(JSON.stringify({ event: 'RTC OFFER', payload: { offer } }));
     }
   });
 
@@ -51,18 +55,32 @@ const signalingServer = async (fastify) => {
     const { answer } = data;
     const toSocket = pairs.get(socket) || pairs.getKey(socket);
     if (toSocket) {
-      toSocket.send(JSON.stringify({ EVENT: 'RTC OFFER', payload: { answer } }));
+      toSocket.send(JSON.stringify({ event: 'RTC ANSWER', payload: { answer } }));
     }
   });
 
+  wsConnection.addEvent('ICE CANDIDATE', { schema:
+        S.object()
+          .prop('candidate', S.object())
+          .required(['candidate'])
+          .valueOf()
+    },
+    (socket, data) => {
+      const { candidate } = data;
+      const toSocket = pairs.getKey(socket) || pairs.get(socket);
+      if (toSocket) {
+        toSocket.send(JSON.stringify({ event: 'ICE CANDIDATE', payload: { candidate } }));
+      }
+    });
+
   wsConnection.addEvent('HOST REQUEST', (socket) => {
     if (hosts.getKey(socket)) {
-      socket.send(JSON.stringify({ EVENT: 'HOST RESPONSE', payload: { 'success': false } }));
+      socket.send(JSON.stringify({ event: 'HOST RESPONSE', payload: { 'success': false } }));
       return;
     }
     const key = generateKey();
     hosts.set(key, socket);
-    socket.send(JSON.stringify({ EVENT: 'HOST RESPONSE', payload: { key, 'success': true } }));
+    socket.send(JSON.stringify({ event: 'HOST RESPONSE', payload: { key, 'success': true } }));
   });
 
   wsConnection.addEvent('JOIN REQUEST', { schema:
@@ -74,12 +92,30 @@ const signalingServer = async (fastify) => {
     const { key } = data;
     const hostSocket = hosts.get(key);
     if (!hostSocket) {
-      socket.send(JSON.stringify({ EVENT: 'JOIN RESPONSE',
+      socket.send(JSON.stringify({ event: 'JOIN RESPONSE',
         payload: { 'success': false, msg: 'Key not found' } }));
       return;
     }
     pairs.set(hostSocket, socket);
-    socket.send(JSON.stringify({ EVENT: 'JOIN RESPONSE', payload: { 'success': true } }));
+    socket.send(JSON.stringify({ event: 'JOIN RESPONSE', payload: { 'success': true } }));
+  });
+
+  wsConnection.addEvent('FILE METADATA', { schema:
+      S.array()
+        .items(
+        S.object()
+          .prop('name', S.string().required())
+          .prop('size', S.integer().required())
+      )
+        .valueOf()
+  }, (socket, data) => {
+    const clientSocket = pairs.get(socket);
+    if (!clientSocket) {
+      socket.send(JSON.stringify({ event: 'ERROR',
+        payload: { msg: 'No sockets connected' } }));
+      return;
+    }
+    clientSocket.send(JSON.stringify({ event: 'FILE METADATA', payload: data }));
   });
 
 

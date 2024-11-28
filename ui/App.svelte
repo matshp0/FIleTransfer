@@ -5,10 +5,12 @@
   import NotFound from './routes/404.svelte'
   import Loader from './components/Loader.svelte'
   import Redirect from './routes/Redirect.svelte'
-  import Copybox from './components/Copybox.svelte';
+  import Test from './components/Test.svelte'
+
+
   const routes = {
     '/': Upload,
-    '/copybox': Copybox,
+    '/test': Test,
     '/receive/:id': Download,
     '/receive': Redirect,
     '*': NotFound

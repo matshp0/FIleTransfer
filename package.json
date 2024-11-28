@@ -9,7 +9,6 @@
     "start": "sirv public --no-clear"
   },
   "dependencies": {
-    "@beyonk/svelte-notifications": "^4.2.0",
     "@fastify/autoload": "^6.0.2",
     "@fastify/static": "^8.0.2",
     "@fastify/websocket": "^11.0.1",
@@ -23,6 +22,7 @@
     "fluent-json-schema-es": "^4.2.0",
     "page": "^1.3.7",
     "sirv-cli": "^2.0.0",
+    "streamsaver": "^2.0.6",
     "svelte-spa-router": "^4.0.1"
   },
   "devDependencies": {

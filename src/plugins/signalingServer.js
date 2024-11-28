@@ -10,9 +10,13 @@ const signalingServer = async (fastify) => {
 
   const onClose = (socket) => {
     console.log('Connection closed');
-    pairs.delete(socket);
-    pairs.deleteValue(socket);
-    hosts.deleteValue(socket);
+    if (hosts.getKey(socket)) {
+      hosts.deleteValue(socket);
+      pairs.delete(socket);
+    }
+    else{
+      pairs.deleteValue(socket);
+    }
   };
   const wsConnection = new WSController({ onClose });
 
@@ -94,6 +98,24 @@ const signalingServer = async (fastify) => {
     }
     pairs.set(hostSocket, socket);
     socket.send(JSON.stringify({ event: 'JOIN RESPONSE', payload: { 'success': true } }));
+  });
+
+  wsConnection.addEvent('FILE METADATA', { schema:
+      S.array()
+        .items(
+        S.object()
+          .prop('name', S.string().required())
+          .prop('size', S.integer().required())
+      )
+        .valueOf()
+  }, (socket, data) => {
+    const clientSocket = pairs.get(socket);
+    if (!clientSocket) {
+      socket.send(JSON.stringify({ event: 'ERROR',
+        payload: { msg: 'No sockets connected' } }));
+      return;
+    }
+    clientSocket.send(JSON.stringify({ event: 'FILE METADATA', payload: data }));
   });
 
 

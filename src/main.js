@@ -1,5 +1,4 @@
 import path from 'path';
-import fs from 'fs';
 import { fileURLToPath } from 'url';
 import Fastify from 'fastify';
 import serveStatic from './plugins/frontend.js';

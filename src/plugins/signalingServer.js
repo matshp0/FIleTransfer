@@ -1,127 +1,129 @@
 import fp from 'fastify-plugin';
 import BiMap from 'bidirectional-map';
-import WSController from '../scripts/wsServer.js';
+import WSController from '../scripts/wsController.js';
 import S from 'fluent-json-schema';
 import generateKey from '../scripts/generateKey.js';
 
 const signalingServer = async (fastify) => {
-  const pairs = new BiMap();
-  const hosts = new BiMap();
+  const clients = new BiMap();
 
   const onClose = (socket) => {
     console.log('Connection closed');
-    if (hosts.getKey(socket)) {
-      hosts.deleteValue(socket);
-      pairs.delete(socket);
-    }
-    else{
-      pairs.deleteValue(socket);
-    }
+    clients.delete(socket);
   };
   const wsConnection = new WSController({ onClose });
-
-  wsConnection.addEvent('HELLO', { schema: 
-      S.object()
-        .prop('username', S.string())
-        .prop('password', S.string())
-        .required(['username', 'password'])
-        .valueOf()
-  },
-  (socket, data) => {
-    socket.send(JSON.stringify(data));
-  });
 
   wsConnection.addEvent('RTC OFFER', { schema:
       S.object()
         .prop('offer', S.object())
-        .required(['offer'])
+        .prop('destination', S.string())
+        .required(['offer', 'destination'])
         .valueOf()
   },
   (socket, data) => {
-    const { offer } = data;
-    const toSocket = pairs.getKey(socket) || pairs.get(socket);
+    const { offer, destination } = data;
+    const origin = clients.get(socket);
+    const toSocket = clients.getKey(destination);
     if (toSocket) {
-      toSocket.send(JSON.stringify({ event: 'RTC OFFER', payload: { offer } }));
+      toSocket.send(JSON.stringify({ event: 'RTC OFFER', payload: { offer, origin } }));
     }
-  });
+  }); // sent by the client to initiate a rtc connection
 
   wsConnection.addEvent('RTC ANSWER', { schema:
       S.object()
         .prop('answer', S.object())
-        .required(['answer'])
+        .prop('destination', S.string())
+        .required(['answer', 'destination'])
         .valueOf()
   },
   (socket, data) => {
-    const { answer } = data;
-    const toSocket = pairs.get(socket) || pairs.getKey(socket);
+    const { answer, destination } = data;
+    const toSocket = clients.getKey(destination);
     if (toSocket) {
       toSocket.send(JSON.stringify({ event: 'RTC ANSWER', payload: { answer } }));
     }
-  });
+  }); // sent by the host to the client in answer to RTC OFFER
 
   wsConnection.addEvent('ICE CANDIDATE', { schema:
         S.object()
           .prop('candidate', S.object())
-          .required(['candidate'])
+          .prop('destination', S.string())
+          .required(['candidate', 'destination'])
           .valueOf()
     },
     (socket, data) => {
-      const { candidate } = data;
-      const toSocket = pairs.getKey(socket) || pairs.get(socket);
+      const { candidate, destination } = data;
+      const toSocket = clients.getKey(destination);
+      const origin = clients.get(socket);
       if (toSocket) {
-        toSocket.send(JSON.stringify({ event: 'ICE CANDIDATE', payload: { candidate } }));
+        toSocket.send(JSON.stringify({ event: 'ICE CANDIDATE', payload: { candidate, origin } }));
       }
-    });
-
-  wsConnection.addEvent('HOST REQUEST', (socket) => {
-    if (hosts.getKey(socket)) {
-      socket.send(JSON.stringify({ event: 'HOST RESPONSE', payload: { 'success': false } }));
-      return;
-    }
-    const key = generateKey();
-    hosts.set(key, socket);
-    socket.send(JSON.stringify({ event: 'HOST RESPONSE', payload: { key, 'success': true } }));
-  });
+    }); // sent by both the client and the host to exchange ice candidates
 
   wsConnection.addEvent('JOIN REQUEST', { schema:
       S.object()
-        .prop('key', S.string())
-        .required(['key'])
+        .prop('destination', S.string())
+        .required(['destination'])
         .valueOf()
   }, (socket, data) => {
-    const { key } = data;
-    const hostSocket = hosts.get(key);
+    const { destination } = data;
+    const origin = clients.get(socket);
+    const hostSocket = clients.getKey(destination);
     if (!hostSocket) {
-      socket.send(JSON.stringify({ event: 'JOIN RESPONSE',
-        payload: { 'success': false, msg: 'Key not found' } }));
+      socket.send(JSON.stringify({ event: 'ERROR',
+        payload: { msg: 'Key not found' } }));
       return;
     }
-    pairs.set(hostSocket, socket);
-    socket.send(JSON.stringify({ event: 'JOIN RESPONSE', payload: { 'success': true } }));
-  });
+    hostSocket.send(JSON.stringify({ event: 'JOIN REQUEST', payload: { origin } }));
+  }); //sent by the client to initiate a connection
 
   wsConnection.addEvent('FILE METADATA', { schema:
-      S.array()
-        .items(
+      S.object()
+      .prop('files', S.array().items(
         S.object()
-          .prop('name', S.string().required())
-          .prop('size', S.integer().required())
-      )
+          .prop('name', S.string())
+          .prop('size', S.number())
+          .required(['name', 'size'])
+      ))
+      .prop('destination', S.string())
+      .required(['files', 'destination'])
         .valueOf()
   }, (socket, data) => {
-    const clientSocket = pairs.get(socket);
+    const { destination, files } = data
+    const clientSocket = clients.getKey(destination);
     if (!clientSocket) {
       socket.send(JSON.stringify({ event: 'ERROR',
-        payload: { msg: 'No sockets connected' } }));
+        payload: { msg: 'No destination found' } }));
       return;
     }
-    clientSocket.send(JSON.stringify({ event: 'FILE METADATA', payload: data }));
-  });
+    clientSocket.send(JSON.stringify({ event: 'FILE METADATA', payload: files }));
+  }); //sent by the host to the client in answer to JOIN REQUEST
 
+  wsConnection.addEvent('GET SOCKET ID', (socket) => {
+    socket.send(JSON.stringify({ event: 'SOCKET ID', payload: { id: clients.get(socket) } }));
+  }); //sent by the host to the client in answer to JOIN REQUEST
 
   fastify.get('/signaling', { websocket: true }, (socket) => {
+    const socketId = generateKey(12);
+    clients.set(socket, socketId)
     wsConnection.listen(socket);
   });
 };
 
 export default fp(signalingServer);
+
+/*
+DOWNLOADER(host) <-> UPLOADER(client)
+
+<- JOIN REQUEST
+-> FILE METADATA
+<- RTC OFFER
+-> RTC ANSWER
+<-> ICE CANDIDATE
+
+<- [rtc]READY
+-> [rtc]data
+-> [rtc]EOF
+<- [rtc]READY
+...
+ */

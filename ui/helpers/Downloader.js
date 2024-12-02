@@ -9,6 +9,13 @@ export default class Downloader {
     this.wsController = new WSController();
     this.rtcClient = new RtcClient(socket, socketId);
     this.socket.onopen = this.onOpen.bind(this);
+    this.rtcClient.addEventListener('dataChannelOpen',  () => {
+    });
+  }
+
+  async startDownload() {
+    console.log(this.files);
+    await this.rtcClient.receiveFiles(this.files);
   }
 
   async onOpen() {

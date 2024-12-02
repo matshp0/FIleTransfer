@@ -96,7 +96,7 @@ const signalingServer = async (fastify) => {
         payload: { msg: 'No destination found' } }));
       return;
     }
-    clientSocket.send(JSON.stringify({ event: 'FILE_METADATA', payload: files }));
+    clientSocket.send(JSON.stringify({ event: 'FILE_METADATA', payload: { files } }));
   }); //sent by the host to the client in answer to JOIN REQUEST
 
   wsConnection.addEvent('GET_SOCKET_ID', (socket) => {

@@ -5,10 +5,13 @@ export default class Uploader {
   constructor(socket) {
     this.socket = socket;
     this.wsController = new WSController();
-    this.rtcClient = new Map();
+    this.rtcClients = new Map();
     this.files = [];
     this.socketId = null;
     socket.onopen = this.onOpen.bind(this);
+    for (const client of this.rtcClients.values()) {
+      console.log('Client:', client);
+    }
   }
 
   onOpen () {
@@ -24,7 +27,10 @@ export default class Uploader {
     this.wsController.addEvent('JOIN_REQUEST', async (socket, data) => {
       const { origin } = data;
       const client = new RtcClient(this.socket, origin);
-      this.rtcClient.set(origin, client);
+      client.addEventListener('dataChannelOpen',  () => {
+        client.sendFiles(this.files);
+      });
+      this.rtcClients.set(origin, client);
       const metadata = this.files.map(({ name, size }) => ({ name, size }));
       socket.send(JSON.stringify({ event: 'FILE_METADATA',
         payload: { destination: origin, files: metadata } }));
@@ -32,7 +38,7 @@ export default class Uploader {
 
     this.wsController.addEvent('RTC_OFFER',  async (socket, data) => {
       const { origin } = data;
-      const client = this.rtcClient.get(origin);
+      const client = this.rtcClients.get(origin);
       if (!client) {
         console.log(`Client ${origin} not found`);
         return;
@@ -42,7 +48,7 @@ export default class Uploader {
 
     this.wsController.addEvent('ICE_CANDIDATE',  async (socket, data) => {
       const { origin } = data;
-      const client = this.rtcClient.get(origin);
+      const client = this.rtcClients.get(origin);
       if (!client) {
         console.log(`Client ${origin} not found`);
         return;

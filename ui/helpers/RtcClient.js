@@ -1,19 +1,24 @@
-export default class RtcClient {
+import streamSaver from 'streamsaver';
+
+const CHUNK_SIZE = 262144; //256KB
+const EOF = 'EOF'; // End of file
+const THRESHOLD = 12 * 1024 * 1024; // 12MB
+
+export default class RtcClient extends EventTarget {
   constructor(socket, socketId) {
+    super();
     this.socket = socket;
     this.destination = socketId;
     this.peerConnection = new RTCPeerConnection();
-    this.CHUNK_SIZE = 16 * 1024;
     this.dataChannel = this.peerConnection.createDataChannel('FileTransfer', {
       negotiated: true,
       id: 0,
     });
     this.peerConnection.onicecandidate = this.onCandidateDiscovery.bind(this);
-    this.peerConnection.addEventListener('connectionstatechange', event => {
-      if (this.peerConnection.connectionState === 'connected') {
-        console.log('PEERS CONNECTION ESTABLISHED');
-      }
-    });
+    this.dataChannel.addEventListener('open', event => {
+      const openChannelEvent = new Event('dataChannelOpen');
+      this.dispatchEvent(openChannelEvent);
+    }, {once: true});
   }
 
   async onCandidateDiscovery(event) {
@@ -68,46 +73,97 @@ export default class RtcClient {
     }
   }
 
-  async sendFile(file) {
-    const reader = new FileReader();
-    const { size } = file;
-    let offset = 0;
+  sendReady() {
+    this.dataChannel.send('READY');
+  }
 
-    reader.onload = async (event) => {
-      const data = event.target.result;
-      console.log(`Sending ${data.byteLength} bytes, sent: ${offset / CHUNK_SIZE}`);
-      await waitForBufferedAmount(this.dataChannel);
-      this.dataChannel.send(data);
-      offset += data.byteLength;
-      readNextChunk();
-    };
-
-    reader.onerror = (event) => {
-      console.error('FileReader error', event.target.error);
-      throw event.target.error;
-    };
-
-    const readNextChunk = () => {
-      if (offset < size) {
-        const slice = file.slice(offset, offset + CHUNK_SIZE);
-        reader.readAsArrayBuffer(slice);
-      } else {
-        this.dataChannel.send(EOF);
-        console.log('File transfer complete. EOF sent.');
-        return;
-      }
-    };
-
-    const waitForBufferedAmount = () => {
-      return new Promise((resolve) => {
-        const threshold = 15 * 1024 * 1024;
-        if (this.dataChannel.bufferedAmount < threshold) {
+  awaitReadyState() {
+    return new Promise((resolve) => {
+      this.dataChannel.addEventListener('message', event => {
+        const message = event.data;
+        if (message === 'READY') {
           resolve();
-        } else {
-          setTimeout(() => waitForBufferedAmount().then(resolve), 10);
         }
-      });
-    };
-    readNextChunk();
+      }, { once: true });
+    });
+  }
+  async sendFiles(files) {
+    for (const file of files) {
+      console.log('awaiting ready state');
+      await this.awaitReadyState();
+      console.log('sending files');
+      await this.sendFile(file);
+    }
+  }
+
+  async sendFile(file) {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      const { size } = file;
+      let offset = 0;
+
+      reader.onload = async (event) => {
+        const data = event.target.result;
+        console.log(`Sending ${data.byteLength} bytes, sent: ${offset / CHUNK_SIZE}`);
+        await waitForBufferedAmount(this.dataChannel);
+        this.dataChannel.send(data);
+        offset += data.byteLength;
+        readNextChunk();
+      };
+
+      reader.onerror = (event) => {
+        console.error('FileReader error', event.target.error);
+        throw event.target.error;
+      };
+
+      const readNextChunk = () => {
+        if (offset < size) {
+          const slice = file.slice(offset, offset + CHUNK_SIZE);
+          reader.readAsArrayBuffer(slice);
+        } else {
+          this.dataChannel.send(EOF);
+          console.log('File transfer complete. EOF sent.');
+          resolve();
+        }
+      };
+
+      const waitForBufferedAmount = () => {
+        return new Promise((resolve) => {
+          if (this.dataChannel.bufferedAmount < THRESHOLD) {
+            resolve();
+          } else {
+            setTimeout(() => waitForBufferedAmount().then(resolve), 10);
+          }
+        });
+      };
+      readNextChunk();
+    });
+  }
+
+  async receiveFiles(files) {
+    console.log(JSON.stringify(files));
+    for (const file of files){
+      this.dataChannel.send('READY');
+      await this.receiveFile(file);
+    }
+  }
+
+  async receiveFile(file) {
+    return new Promise((resolve) => {
+      const { name, size } = file;
+      const fileStream = streamSaver.createWriteStream(name, { size });
+      const writer = fileStream.getWriter();
+      this.dataChannel.onmessage = (event) => {
+        const message = event.data;
+        console.log('Received chunk', message.length);
+        if (message === 'EOF') {
+          writer.close();
+          resolve();
+          return;
+        }
+        const uint8chunk = new Uint8Array(message);
+        writer.write(uint8chunk);
+      }
+    });
   }
 }

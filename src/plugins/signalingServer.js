@@ -13,7 +13,7 @@ const signalingServer = async (fastify) => {
   };
   const wsConnection = new WSController({ onClose });
 
-  wsConnection.addEvent('RTC OFFER', { schema:
+  wsConnection.addEvent('RTC_OFFER', { schema:
       S.object()
         .prop('offer', S.object())
         .prop('destination', S.string())
@@ -25,11 +25,11 @@ const signalingServer = async (fastify) => {
     const origin = clients.get(socket);
     const toSocket = clients.getKey(destination);
     if (toSocket) {
-      toSocket.send(JSON.stringify({ event: 'RTC OFFER', payload: { offer, origin } }));
+      toSocket.send(JSON.stringify({ event: 'RTC_OFFER', payload: { offer, origin } }));
     }
   }); // sent by the client to initiate a rtc connection
 
-  wsConnection.addEvent('RTC ANSWER', { schema:
+  wsConnection.addEvent('RTC_ANSWER', { schema:
       S.object()
         .prop('answer', S.object())
         .prop('destination', S.string())
@@ -40,11 +40,11 @@ const signalingServer = async (fastify) => {
     const { answer, destination } = data;
     const toSocket = clients.getKey(destination);
     if (toSocket) {
-      toSocket.send(JSON.stringify({ event: 'RTC ANSWER', payload: { answer } }));
+      toSocket.send(JSON.stringify({ event: 'RTC_ANSWER', payload: { answer } }));
     }
   }); // sent by the host to the client in answer to RTC OFFER
 
-  wsConnection.addEvent('ICE CANDIDATE', { schema:
+  wsConnection.addEvent('ICE_CANDIDATE', { schema:
         S.object()
           .prop('candidate', S.object())
           .prop('destination', S.string())
@@ -56,11 +56,11 @@ const signalingServer = async (fastify) => {
       const toSocket = clients.getKey(destination);
       const origin = clients.get(socket);
       if (toSocket) {
-        toSocket.send(JSON.stringify({ event: 'ICE CANDIDATE', payload: { candidate, origin } }));
+        toSocket.send(JSON.stringify({ event: 'ICE_CANDIDATE', payload: { candidate, origin } }));
       }
     }); // sent by both the client and the host to exchange ice candidates
 
-  wsConnection.addEvent('JOIN REQUEST', { schema:
+  wsConnection.addEvent('JOIN_REQUEST', { schema:
       S.object()
         .prop('destination', S.string())
         .required(['destination'])
@@ -74,10 +74,10 @@ const signalingServer = async (fastify) => {
         payload: { msg: 'Key not found' } }));
       return;
     }
-    hostSocket.send(JSON.stringify({ event: 'JOIN REQUEST', payload: { origin } }));
+    hostSocket.send(JSON.stringify({ event: 'JOIN_REQUEST', payload: { origin } }));
   }); //sent by the client to initiate a connection
 
-  wsConnection.addEvent('FILE METADATA', { schema:
+  wsConnection.addEvent('FILE_METADATA', { schema:
       S.object()
       .prop('files', S.array().items(
         S.object()
@@ -96,12 +96,12 @@ const signalingServer = async (fastify) => {
         payload: { msg: 'No destination found' } }));
       return;
     }
-    clientSocket.send(JSON.stringify({ event: 'FILE METADATA', payload: files }));
+    clientSocket.send(JSON.stringify({ event: 'FILE_METADATA', payload: files }));
   }); //sent by the host to the client in answer to JOIN REQUEST
 
-  wsConnection.addEvent('GET SOCKET ID', (socket) => {
-    socket.send(JSON.stringify({ event: 'SOCKET ID', payload: { id: clients.get(socket) } }));
-  }); //sent by the host to the client in answer to JOIN REQUEST
+  wsConnection.addEvent('GET_SOCKET_ID', (socket) => {
+    socket.send(JSON.stringify({ event: 'SOCKET_ID', payload: { id: clients.get(socket) } }));
+  });
 
   fastify.get('/signaling', { websocket: true }, (socket) => {
     const socketId = generateKey(12);

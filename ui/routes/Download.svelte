@@ -1,18 +1,13 @@
 <script>
   import streamSaver from 'streamsaver';
-  import rtcEvents from '../helpers/rtcEvents.js';
   import { getFileSize, generator } from '../helpers/utils.js';
+  import Downloader from '../helpers/Downloader.js';
 
   export let params = {}
 
   const hostId = params.id;
   const socket = new WebSocket(`ws://${window.location.host}/api/signaling`);
-  const peerConnection = new RTCPeerConnection();
-  const dataChannel = peerConnection.createDataChannel('myDataChannel', {
-    negotiated: true,
-    id: 0,
-  });
-  const controller = rtcEvents(socket, peerConnection);
+  const downloader = new Downloader(socket, hostId);
   let fileStream = {};
   let writer = {};
   let files = [];
@@ -30,60 +25,6 @@
     });
     writer = fileStream.getWriter();
   }
-
-  controller.addEvent('JOIN RESPONSE', (socket, data) => {
-    const { success, msg } = data;
-    if (!success) {
-      console.error(msg);
-      return;
-    }
-    console.log('Download request accepted');
-  });
-
-  controller.addEvent('FILE METADATA', (socket, data) => {
-    console.log('Received file metadata:', data);
-    files = data;
-    filesGenerator = generator(files);
-    nextFile();
-  });
-
-  controller.listen(socket);
-
-  peerConnection.addEventListener('connectionstatechange', event => {
-    if (peerConnection.connectionState === 'connected') {
-      console.log('Peers connected!');
-    }
-  });
-
-  const channelMessageHandler = (event) => {
-    const message = event.data;
-    if (message === 'EOF') {
-      writer.close();
-      nextFile();
-      return;
-    }
-    const uint8chunk = new Uint8Array(message);
-    writer.write(uint8chunk);
-  }
-
-  dataChannel.addEventListener('message', channelMessageHandler);
-
-
-  const initiateRtcConnection = async () => {
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-    socket.send(JSON.stringify({ 'event': 'RTC OFFER', payload: { offer } }));
-  }
-
-  socket.addEventListener('open', async (event) => {
-    socket.send(JSON.stringify({ 'event': 'JOIN REQUEST', payload: { key: hostId } }));
-    await initiateRtcConnection()
-  });
-
-  dataChannel.addEventListener('close', event => {
-    console.log(event);
-    console.log('Data channel closed');
-  });
 </script>
 
 <style>

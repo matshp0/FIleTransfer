@@ -1,70 +1,23 @@
 <script>
-  import rtcEvents from '../helpers/rtcEvents.js';
   import Copybox from '../components/Copybox.svelte';
-  import sendFile from '../helpers/webRTCSendFile.js';
   import { getFileSize } from '../helpers/utils.js';
+  import Uploader from '../helpers/Uploader.js';
 
   let files = [];
   let downloadingLink = "";
 
   const socket = new WebSocket(`ws://${window.location.host}/api/signaling`);
-  const peerConnection = new RTCPeerConnection();
-  const dataChannel = peerConnection.createDataChannel('myDataChannel', {
-    negotiated: true,
-    id: 0,
-  });
-  const controller = rtcEvents(socket, peerConnection);
-
-  controller.addEvent('HOST RESPONSE', (socket, data) => {
-    const { success, key } = data;
-    if (!success) {
-      console.error('Host request failed');
-      return;
-    }
-    downloadingLink = `http://${window.location.host}/#/receive/${key}`;
-  });
-  controller.listen(socket);
+  const uploader = new Uploader(socket);
 
   const handleFileSelect = (event) => {
     files = Array.from(event.target.files);
+    uploader.files = files;
   };
 
-  const startTransfer = () => {
-    socket.send(JSON.stringify({ 'event': 'HOST REQUEST' }));
+  const getDownloadingLink = async () => {
+    const { socketId } = uploader;
+    downloadingLink = `${window.location.origin}/#/receive/${socketId}`;
   };
-
-  peerConnection.addEventListener('connectionstatechange', (event) => {
-    if (peerConnection.connectionState === 'connected') {
-      console.log('Peers connected!');
-    }
-  });
-
-  const handler = (event) => {
-    console.log('Data channel opened');
-    sendMetaData();
-    sendFiles();
-    dataChannel.removeEventListener('open', handler);
-  }
-
-  dataChannel.addEventListener('open', handler);
-
-  const sendFiles = async () => {
-    console.log(peerConnection);
-    for (const file of files) {
-      await sendFile(file, dataChannel);
-    }
-  }
-
-  const sendMetaData = async () => {
-    const metadata = [];
-    for (const file of files) {
-      metadata.push({
-        name: file.name,
-        size: file.size,
-      });
-    }
-    socket.send(JSON.stringify({event : 'FILE METADATA', payload: metadata}));
-  }
 </script>
 
 <style>
@@ -195,7 +148,7 @@
     <input type="file" id="file-input" multiple on:change="{handleFileSelect}" />
 
     <!-- Start Transfer Button -->
-    <button class="button-6" on:click="{startTransfer}" disabled="{files.length === 0}">
+    <button class="button-6" on:click="{getDownloadingLink}" disabled="{files.length === 0}">
       Start Transfer
     </button>
   {/if}

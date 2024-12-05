@@ -85,20 +85,30 @@ export default class RtcClient extends EventTarget {
   }
   async sendFiles(files) {
     for (const file of files) {
+      const skipController = new AbortController();
+      const { signal } = skipController;
       console.log('awaiting ready state');
       await this.awaitReadyState();
-      console.log('sending files');
-      await this.sendFile(file);
+      await this.sendFile(file, signal)
+        .catch((e) => {
+          console.log("Error sending file:", e);
+        });
     }
   }
 
-  async sendFile(file) {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
+  async sendFile(file, signal) {
+    return new Promise((resolve, reject) => {
+      let reader = new FileReader();
       const { size } = file;
       let offset = 0;
 
+      signal.addEventListener('abort', () => {
+        reader = null
+        reject('File transfer aborted');
+      });
+
       reader.onload = async (event) => {
+        if (signal.aborted) return;
         const data = event.target.result;
         console.log(`Sending ${data.byteLength} bytes, sent: ${offset / CHUNK_SIZE}`);
         await waitForBufferedAmount(this.dataChannel);
@@ -113,6 +123,7 @@ export default class RtcClient extends EventTarget {
       };
 
       const readNextChunk = () => {
+        if (signal.aborted) return;
         if (offset < size) {
           const slice = file.slice(offset, offset + CHUNK_SIZE);
           reader.readAsArrayBuffer(slice);
@@ -136,23 +147,29 @@ export default class RtcClient extends EventTarget {
     });
   }
 
-  async receiveFiles(files) {
-    console.log(JSON.stringify(files));
+  async receiveFiles(files, signal) {
+    signal.addEventListener('abort', () => {
+      this.dataChannel.close();
+    });
     for (const file of files){
+      if (signal.aborted) return;
       this.dataChannel.send('READY');
-      await this.receiveFile(file);
+      await this.receiveFile(file, signal);
     }
   }
 
-  async receiveFile(file) {
-    return new Promise((resolve) => {
+  async receiveFile(file, signal) {
+    return new Promise((resolve, reject) => {
       const { name, size } = file;
       const fileStream = streamSaver.createWriteStream(name, { size });
       const writer = fileStream.getWriter();
-      window.onunload = () => {
-        fileStream.abort()
-        writer.abort()
+      const abortHandler = () => {
+        fileStream.abort();
+        writer.abort();
+        reject();
       }
+      signal.addEventListener('abort', abortHandler);
+      window.onunload = abortHandler;
       this.dataChannel.onmessage = (event) => {
         const message = event.data;
         console.log('Received chunk', message.length);

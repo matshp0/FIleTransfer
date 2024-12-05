@@ -16,9 +16,13 @@ export default class Downloader {
     });
   }
 
+  setAbortSignal(signal) {
+    this.signal = signal;
+  }
+
   async startDownload() {
     console.log(this.files);
-    await this.rtcClient.receiveFiles(await this.files);
+    await this.rtcClient.receiveFiles(await this.files, this.signal);
   }
 
   async onOpen() {

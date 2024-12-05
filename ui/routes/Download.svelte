@@ -7,10 +7,17 @@
   const hostId = params.id;
   const socket = new WebSocket(`ws://${window.location.host}/api/signaling`);
   const downloader = new Downloader(socket, hostId);
+  const abortController = new AbortController();
+  const { signal } = abortController;
+  downloader.setAbortSignal(signal);
   const { files } = downloader;
   const download = () =>{
     isDownloading = true;
     downloader.startDownload.bind(downloader)();
+  }
+
+  const abort = () =>{
+    abortController.abort();
   }
 
   let isPending = true;
@@ -131,6 +138,9 @@
 
   <button class="button-6" on:click={download} disabled={isPending || isDownloading}>
     {isPending ? 'Loading...' : 'Download files'}
+  </button>
+  <button class="button-6" on:click={abort} disabled={!isDownloading}>
+    Cancel download
   </button>
 
   <p hidden={isPending}><strong >Ready to download: </strong></p>

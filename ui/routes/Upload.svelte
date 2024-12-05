@@ -3,8 +3,8 @@
   import { getFileSize } from '../helpers/utils.js';
   import Uploader from '../helpers/Uploader.js';
 
-  let files = [];
-  let downloadingLink = "";
+  let files = $state([]);
+  let downloadingLink = $state("");
 
   const socket = new WebSocket(`ws://${window.location.host}/api/signaling`);
   const uploader = new Uploader(socket);
@@ -143,12 +143,10 @@
 
   {#if !downloadingLink}
     <p>Select files to transfer:</p>
-    <!-- Custom File Input Button -->
     <label for="file-input" class="button-6">Choose File</label>
-    <input type="file" id="file-input" multiple on:change="{handleFileSelect}" />
+    <input type="file" id="file-input" multiple onchange="{handleFileSelect}" />
 
-    <!-- Start Transfer Button -->
-    <button class="button-6" on:click="{getDownloadingLink}" disabled="{files.length === 0}">
+    <button class="button-6" onclick="{getDownloadingLink}" disabled="{files.length === 0}">
       Start Transfer
     </button>
   {/if}
@@ -156,6 +154,7 @@
 
   {#if downloadingLink}
     <Copybox url={downloadingLink} />
+    <p><strong >Ready to be shared: </strong></p>
   {/if}
 
   <ul class="file-list">
@@ -168,5 +167,4 @@
       </div>
     {/each}
   </ul>
-
 </main>

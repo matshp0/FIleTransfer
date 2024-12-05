@@ -6,6 +6,9 @@ export default class Downloader {
     console.log(socket, socketId);
     this.socket = socket;
     this.destination = socketId;
+    this.files = new Promise((resolve) => {
+      this.resolveFiles = resolve;
+    });
     this.wsController = new WSController();
     this.rtcClient = new RtcClient(socket, socketId);
     this.socket.onopen = this.onOpen.bind(this);
@@ -15,7 +18,7 @@ export default class Downloader {
 
   async startDownload() {
     console.log(this.files);
-    await this.rtcClient.receiveFiles(this.files);
+    await this.rtcClient.receiveFiles(await this.files);
   }
 
   async onOpen() {
@@ -30,7 +33,7 @@ export default class Downloader {
     this.wsController.addEvent('FILE_METADATA', async (socket, data) => {
       console.log('FILE METADATA');
       const { files } = data;
-      this.files = files;
+      this.resolveFiles(files);
       await this.rtcClient.createOffer();
     });
     this.wsController.listen(this.socket);

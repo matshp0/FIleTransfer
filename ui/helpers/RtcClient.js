@@ -73,10 +73,6 @@ export default class RtcClient extends EventTarget {
     }
   }
 
-  sendReady() {
-    this.dataChannel.send('READY');
-  }
-
   awaitReadyState() {
     return new Promise((resolve) => {
       this.dataChannel.addEventListener('message', event => {
@@ -153,6 +149,10 @@ export default class RtcClient extends EventTarget {
       const { name, size } = file;
       const fileStream = streamSaver.createWriteStream(name, { size });
       const writer = fileStream.getWriter();
+      window.onunload = () => {
+        fileStream.abort()
+        writer.abort()
+      }
       this.dataChannel.onmessage = (event) => {
         const message = event.data;
         console.log('Received chunk', message.length);
